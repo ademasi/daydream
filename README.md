@@ -11,17 +11,20 @@ This was made to use this controler for keynote presentations (e.g., with pympre
 *   **Mouse Control:**
     *   Touchpad area moves the mouse cursor.
     *   Physical click on the touchpad simulates a left mouse button click.
-*   **Keyboard Emulation:**
+*   **Keyboard Emulation (default mappings):**
     *   **Volume Plus (+)**: Emulates `Right Arrow` (next slide).
     *   **Volume Minus (-)**: Emulates `Left Arrow` (previous slide).
     *   **App Button** (circle/minus icon): Emulates `Escape` key.
     *   **Home Button** (bottom-most): Emulates `Super/Meta/Windows` key.
+*   **Configurable Key Mappings:** Every button (click, volume +/-, app, home) can be remapped to a different key via `--map-*` arguments.
 *   **Device Information:**
     *   Reads and logs manufacturer, model number, etc., if available via the standard Device Information Service.
 *   **Battery Reporting:**
     *   Monitors and logs battery level, using notifications if supported, or periodic reads as a fallback.
 *   **Sway/Wayland Compatibility:** Creates a virtual input device via `uinput`, ensuring good compatibility.
-*   **Configurable Sensitivity:** Mouse sensitivity can be adjusted via command-line arguments.
+*   **Configurable Sensitivity & Touch Tuning:** Mouse sensitivity, dead zone, and optional pointer acceleration are adjustable via command-line arguments.
+*   **Auto-Reconnect:** Reconnects automatically if the controller disconnects.
+*   **Live Status Bar:** In a terminal, a status line pinned to the bottom shows connection state, battery, packet rate, held buttons, touch position, and the last action, with log messages scrolling above it.
 
 ## Prerequisites
 
@@ -30,10 +33,9 @@ This was made to use this controler for keynote presentations (e.g., with pympre
 *   A Bluetooth adapter on your Linux machine.
 
 ### Software
-*   Python 3.8+
-*   `pip` (Python package installer)
+*   [`uv`](https://docs.astral.sh/uv/) (Python package & project manager) — it fetches Python 3.14 and the dependencies for you
 *   `uinput` kernel module (see Setup section)
-*   Required Python libraries: `bleak`, `python-uinput`
+*   Required Python libraries (installed automatically by `uv`): `bleak`, `python-uinput`, `rich`
 *   System dependencies for `python-uinput` (these might vary slightly by distribution):
     *   On Debian/Ubuntu-based systems:
         ```bash
@@ -43,17 +45,23 @@ This was made to use this controler for keynote presentations (e.g., with pympre
 
 ## Setup Instructions
 
-1.  **Clone or Download the Script:**
-    Obtain the `daydreamv2.py` (or your script name) file.
+1.  **Clone the Repository:**
     ```bash
-     git https://github.com/ademasi/daydream
-     cd daydream
+    git clone https://github.com/ademasi/daydream
+    cd daydream
     ```
 
-2.  **Install Python Dependencies:**
+2.  **Install the `daydream` command:**
     ```bash
-    uv pip install bleak python-uinput
+    uv tool install --managed-python --python 3.14 .
     ```
+    This puts `daydream` (and the longer alias `daydream-remote`) in `~/.local/bin` (make sure it's on your `PATH`), in its own isolated environment. `--managed-python` uses a uv-managed Python, so upgrading your distribution's Python won't break the tool.
+
+    After pulling changes, reinstall with:
+    ```bash
+    uv tool install --managed-python --python 3.14 --reinstall .
+    ```
+    To remove it: `uv tool uninstall daydream-remote`.
 
 
 3.  **Setup `uinput` Kernel Module:**
@@ -112,7 +120,7 @@ You'll need either the controller's name or its MAC address, and the UUID for it
         bluetoothctl
         scan on
         # Wait for your "Daydream controller" to appear, note its MAC address.
-        # Example output: [NEW] Device AA:BB:CC:DD:EE:FF Daydream controller
+        # Example output: [NEW] Device 54:AB:3A:F2:ED:07 Daydream controller
         scan off
         exit
         ```
@@ -124,48 +132,96 @@ You'll need either the controller's name or its MAC address, and the UUID for it
 
 ## Usage
 
-Run the script from your terminal.
+Wake the controller (press the Home button) and run:
+
+```bash
+daydream
+```
+
+With no arguments it connects to the device named `Daydream controller` using the standard sensor characteristic UUID. Press `Ctrl+C` to stop.
 
 **Command Structure:**
 ```bash
-python daydreamv2.py [OPTIONS] {--name <NAME> | --address <ADDRESS>} <SENSOR_CHARACTERISTIC_UUID>
+daydream [OPTIONS] [--name <NAME> | --address <ADDRESS>] [SENSOR_CHARACTERISTIC_UUID]
 ```
 
 **Examples:**
 
-*   **Connecting by Name (recommended if udev rules are set):**
+*   **Connecting by MAC Address:**
+    (Replace `54:AB:3A:F2:ED:07` with your controller's actual MAC address)
     ```bash
-    python daydreamv2.py --name "Daydream controller" 00000001-1000-1000-8000-00805f9b34fb
-    ```
-
-*   **Connecting by MAC Address (if udev rules are set):**
-    (Replace `AA:BB:CC:DD:EE:FF` with your controller's actual MAC address)
-    ```bash
-    python daydreamv2.py --address AA:BB:CC:DD:EE:FF 00000001-1000-1000-8000-00805f9b34fb
-    ```
-
-*   **Running with `sudo` (if udev rules are not set up or not working):**
-    ```bash
-    sudo python daydreamv2.py --name "Daydream controller" 00000001-1000-1000-8000-00805f9b34fb
+    daydream --address 54:AB:3A:F2:ED:07
     ```
 
 *   **With custom mouse sensitivity and debug logging:**
     ```bash
-    python daydreamv2.py --name "Daydream controller" --sensitivity-x 1500 --sensitivity-y 1200 --debug 00000001-1000-1000-8000-00805f9b34fb
+    daydream --sensitivity-x 1500 --sensitivity-y 1200 --debug
     ```
 
-**To stop the script, press `Ctrl+C` in the terminal where it's running.**
+*   **With custom key mappings** (e.g. App button → `Enter`, Volume+ → `F5`):
+    ```bash
+    daydream --map-app KEY_ENTER --map-vol-plus KEY_F5
+    ```
+
+*   **Plain log output** (e.g. for a log file or systemd; this also happens automatically when output isn't a terminal):
+    ```bash
+    daydream --no-ui
+    ```
+
+*   **Running from the source checkout** (without installing):
+    ```bash
+    uv run daydream
+    ```
+
+*   **Running with `sudo`** (only if the udev rule isn't set up; the udev rule is the better fix):
+    ```bash
+    sudo ~/.local/bin/daydream
+    ```
+
+### Status Bar
+
+When run in a terminal, the bottom of the screen shows a live status line:
+
+```
+────────────────────────────────────────────────────────────────────────────────────────
+ ● CONNECTED  Daydream controller 54:AB:3A:F2:ED:07 │ ▰▰▰▰▱ 87% │  61 Hz   connected 12:31
+  CLICK  APP  HOME  VOL−  VOL+  │ touch 0.42, 0.61 │ last VOL+ → Right 3s ago
+```
+
+*   **State badge:** `SCANNING` / `CONNECTING` / `CONNECTED` / `RECONNECTING` / `ERROR`, with a spinner while it's waiting.
+*   **Battery** level and **packet rate** (around 60 Hz when the link is healthy).
+*   **Buttons** light up while held, plus the current **touch** position and the **last action** sent.
+*   While not connected, the second line says what it's doing (e.g. which scan attempt it's on).
 
 ### Command-Line Arguments:
 
-*   `--name <NAME>`: The Bluetooth name of your Daydream controller.
-*   `--address <ADDRESS>`: The MAC address of your Daydream controller.
-    *(You must provide either `--name` or `--address`)*
-*   `SENSOR_CHARACTERISTIC_UUID`: (Positional argument) The UUID for the controller's main sensor data characteristic (typically `00000001-1000-1000-8000-00805f9b34fb`).
-*   `--macos-use-bdaddr`: (Optional) When true, use Bluetooth address instead of UUID on macOS for device identification (less relevant for this Linux-focused uinput script).
-*   `--sensitivity-x <VALUE>`: (Optional) Mouse X-axis sensitivity. Default: 1000.
-*   `--sensitivity-y <VALUE>`: (Optional) Mouse Y-axis sensitivity. Default: 900.
-*   `-d`, `--debug`: (Optional) Enable debug logging for more verbose output.
+**Device selection (all optional):**
+*   `--name <NAME>`: The Bluetooth name of your Daydream controller. Default: `Daydream controller`.
+*   `--address <ADDRESS>`: The MAC address of your Daydream controller (use instead of `--name`).
+*   `SENSOR_CHARACTERISTIC_UUID`: (Positional) The controller's sensor data characteristic. Default: `00000001-1000-1000-8000-00805f9b34fb`.
+
+**Mouse / touch tuning:**
+*   `--sensitivity-x <VALUE>`: Mouse X-axis sensitivity. Default: 1000.
+*   `--sensitivity-y <VALUE>`: Mouse Y-axis sensitivity. Default: 900.
+*   `--dead-zone <VALUE>`: Touch dead-zone threshold below which movement is ignored. Default: 0.01.
+*   `--acceleration`: Enable pointer acceleration.
+*   `--acceleration-factor <VALUE>`: Acceleration multiplier. Default: 1.5.
+*   `--acceleration-threshold <VALUE>`: Movement threshold to trigger acceleration. Default: 0.03.
+
+**Key mappings:** *(remap a button to a different key)*
+*   `--map-click <KEY>`: Key for the touchpad click. Default: `BTN_LEFT`.
+*   `--map-vol-plus <KEY>`: Key for the volume-plus button. Default: `KEY_RIGHT`.
+*   `--map-vol-minus <KEY>`: Key for the volume-minus button. Default: `KEY_LEFT`.
+*   `--map-app <KEY>`: Key for the app button. Default: `KEY_ESC`.
+*   `--map-home <KEY>`: Key for the home button. Default: `KEY_LEFTMETA`.
+
+    Valid `<KEY>` values: `BTN_LEFT`, `KEY_DOWN`, `KEY_ENTER`, `KEY_ESC`, `KEY_F5`, `KEY_F11`, `KEY_LEFT`, `KEY_LEFTMETA`, `KEY_RIGHT`, `KEY_SPACE`, `KEY_UP`.
+
+**Other:**
+*   `--parse-imu`: Parse IMU data (orientation, accelerometer, gyroscope). Off by default for performance.
+*   `--macos-use-bdaddr`: When true, use Bluetooth address instead of UUID on macOS for device identification (less relevant for this Linux-focused uinput script).
+*   `--no-ui`: Plain log lines instead of the live status bar (automatic when output isn't a terminal).
+*   `-d`, `--debug`: Enable debug logging for more verbose output.
 
 ## Troubleshooting
 
@@ -175,7 +231,7 @@ python daydreamv2.py [OPTIONS] {--name <NAME> | --address <ADDRESS>} <SENSOR_CHA
     2.  Make it load at boot (see Setup section).
 *   **"Failed to create uinput device: [Errno 13] Permission denied"**:
     You don't have permission to access `/dev/uinput`.
-    1.  Run the script with `sudo`.
+    1.  Run with `sudo ~/.local/bin/daydream`.
     2.  OR, correctly set up the `udev` rule and add your user to the `input` group, then re-login/reboot (see Setup section).
 *   **Cannot find device / Connection issues:**
     1.  Ensure your Daydream controller is charged and in pairing mode or turned on.
@@ -185,6 +241,15 @@ python daydreamv2.py [OPTIONS] {--name <NAME> | --address <ADDRESS>} <SENSOR_CHA
     5.  Use the `--debug` flag for more detailed connection logs.
 *   **Mouse/Keyboard input not working in specific applications on Wayland:**
     `uinput` generally provides good compatibility. If an XWayland application is not receiving input, ensure it has focus. Native Wayland applications should work correctly.
+
+## Development
+
+```bash
+uv sync                     # create .venv with Python 3.14 + dev tools
+uv run pytest -v            # run the tests (no hardware or /dev/uinput needed)
+uv run ruff check daydream.py tests/
+uv run ruff format daydream.py tests/
+```
 
 ## License
 
